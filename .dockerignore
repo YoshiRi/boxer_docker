@@ -1,0 +1,17 @@
+.git
+.gitignore
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+.DS_Store
+
+ckpts
+sample_data
+output
+
+docs/images
+tests/htmlcov
