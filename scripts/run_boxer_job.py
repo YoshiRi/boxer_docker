@@ -3,6 +3,8 @@
 import json
 import os
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +16,21 @@ if str(REPO_ROOT) not in sys.path:
 from run_boxer import build_arg_parser, run_with_args
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
 def _sequence_name(input_path: str) -> str:
     return os.path.basename(input_path.rstrip("/"))
+
+
+def _count_csv_rows(path: Path) -> int | None:
+    if not path.exists() or path.suffix.lower() != ".csv":
+        return None
+    with path.open(encoding="utf-8", newline="") as handle:
+        # Skip header row.
+        next(handle, None)
+        return sum(1 for _ in handle)
 
 
 def _artifact_records(output_root: Path, write_name: str, track: bool) -> list[dict[str, Any]]:
@@ -29,16 +44,34 @@ def _artifact_records(output_root: Path, write_name: str, track: bool) -> list[d
         artifacts.append(
             ("boxer_3dbbs_tracked_csv", output_root / f"{write_name}_3dbbs_tracked.csv")
         )
-    return [
-        {"name": name, "path": str(path), "exists": path.exists()}
-        for name, path in artifacts
-    ]
+
+    records = []
+    for name, path in artifacts:
+        exists = path.exists()
+        record = {
+            "name": name,
+            "path": str(path),
+            "exists": exists,
+            "size_bytes": path.stat().st_size if exists else None,
+        }
+        row_count = _count_csv_rows(path)
+        if row_count is not None:
+            record["row_count"] = row_count
+        records.append(record)
+    return records
 
 
-def build_job_manifest(args) -> dict[str, Any]:
+def build_job_manifest(args, *, run_started_at: str | None = None, duration_sec: float | None = None) -> dict[str, Any]:
     seq_name = _sequence_name(args.input)
     output_root = Path(os.path.expanduser(args.output_dir)) / seq_name
+    artifacts = _artifact_records(output_root, args.write_name, args.track)
     return {
+        "job": {
+            "status": "completed",
+            "run_started_at_utc": run_started_at,
+            "manifest_created_at_utc": _utc_now_iso(),
+            "duration_sec": round(duration_sec, 3) if duration_sec is not None else None,
+        },
         "input": {
             "input_path": args.input,
             "output_dir": str(Path(os.path.expanduser(args.output_dir))),
@@ -55,7 +88,7 @@ def build_job_manifest(args) -> dict[str, Any]:
         },
         "sequence_name": seq_name,
         "output_root": str(output_root),
-        "artifacts": _artifact_records(output_root, args.write_name, args.track),
+        "artifacts": artifacts,
     }
 
 
@@ -70,8 +103,15 @@ def run_boxer_job(**kwargs) -> dict[str, Any]:
         if not hasattr(args, key):
             raise TypeError(f"Unknown Boxer job argument: {key}")
         setattr(args, key, value)
+    run_started_at = _utc_now_iso()
+    start_time = time.perf_counter()
     run_with_args(args)
-    return build_job_manifest(args)
+    duration_sec = time.perf_counter() - start_time
+    return build_job_manifest(
+        args,
+        run_started_at=run_started_at,
+        duration_sec=duration_sec,
+    )
 
 
 def main(argv=None):

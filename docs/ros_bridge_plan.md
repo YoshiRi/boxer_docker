@@ -10,6 +10,7 @@ It supports the same core inference flags as `run_boxer.py`, but adds one ROS-fr
 
 - it can be imported and called as a Python function
 - it emits a JSON manifest alongside the normal CSV and visualization artifacts
+- the manifest includes run timing plus per-artifact size and CSV row counts
 
 Example:
 
@@ -66,12 +67,43 @@ Primary machine-readable outputs:
 
 The manifest JSON records:
 
+- job status and timing metadata
 - requested input parameters
 - resolved per-sequence output directory
 - expected artifact paths
 - existence flags for each artifact
+- artifact sizes in bytes
+- CSV row counts where applicable
 
 This gives a single file a ROS-side launcher can inspect before publishing results downstream.
+
+Example manifest shape:
+
+```json
+{
+  "job": {
+    "status": "completed",
+    "run_started_at_utc": "2026-04-11T01:23:45+00:00",
+    "manifest_created_at_utc": "2026-04-11T01:24:03+00:00",
+    "duration_sec": 18.217
+  },
+  "input": {
+    "input_path": "nym10_gen1",
+    "track": true
+  },
+  "sequence_name": "nym10_gen1",
+  "output_root": "output/nym10_gen1",
+  "artifacts": [
+    {
+      "name": "boxer_3dbbs_csv",
+      "path": "output/nym10_gen1/boxer_3dbbs.csv",
+      "exists": true,
+      "size_bytes": 463669,
+      "row_count": 2201
+    }
+  ]
+}
+```
 
 ## Suggested ROS mapping
 
