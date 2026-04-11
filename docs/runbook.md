@@ -7,12 +7,19 @@ python run_boxer.py --input nym10_gen1 --max_n=90 --track
 ```
 
 It uses host-mounted directories for checkpoints, sample data, and outputs so model assets stay outside the image.
+The compose setup mounts these host paths into `/opt/boxer/`:
+
+- `./ckpts`
+- `./sample_data`
+- `./output`
+- `./logs`
 
 ## 1. Build the container
 
 CPU-only image:
 
 ```bash
+mkdir -p ckpts sample_data output logs
 docker compose build boxer
 ```
 
@@ -77,20 +84,24 @@ docker compose --profile gpu run --rm boxer-gpu python -c "import torch; print(t
 CPU:
 
 ```bash
-docker compose run --rm boxer \
-  python run_boxer.py --input nym10_gen1 --max_n=90 --track
+make demo1
 ```
 
 GPU:
 
 ```bash
-docker compose --profile gpu run --rm boxer-gpu \
-  python run_boxer.py --input nym10_gen1 --max_n=90 --track
+make demo1-gpu
+```
+
+To capture a persistent host-side log for the CPU run:
+
+```bash
+make demo1-log
 ```
 
 ## 5. Output locations on the host
 
-The container mounts the repository root at `/workspace`, so outputs written by Boxer land directly on the host filesystem under:
+Outputs written by Boxer land directly on the host filesystem under:
 
 - `./output/nym10_gen1/boxer_3dbbs.csv`
 - `./output/nym10_gen1/owl_2dbbs.csv`
@@ -105,8 +116,7 @@ To rerun the demo while keeping downloaded assets:
 
 ```bash
 rm -rf output/nym10_gen1
-docker compose run --rm boxer \
-  python run_boxer.py --input nym10_gen1 --max_n=90 --track
+make demo1
 ```
 
 To force a fresh asset download:

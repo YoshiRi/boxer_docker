@@ -7,14 +7,17 @@ services:
         TORCH_VERSION: ${TORCH_VERSION:-2.5.1}
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
     image: boxer:dev
-    working_dir: /workspace
+    working_dir: /opt/boxer
     stdin_open: true
     tty: true
     shm_size: "8gb"
     environment:
       PYTHONUNBUFFERED: "1"
     volumes:
-      - .:/workspace
+      - ./ckpts:/opt/boxer/ckpts
+      - ./sample_data:/opt/boxer/sample_data
+      - ./output:/opt/boxer/output
+      - ./logs:/opt/boxer/logs
     command: bash
 
   boxer-gpu:
@@ -25,7 +28,7 @@ services:
         TORCH_VERSION: ${TORCH_VERSION:-2.5.1}
         TORCH_INDEX_URL: ${TORCH_INDEX_URL_GPU:-https://download.pytorch.org/whl/cu124}
     image: boxer:gpu
-    working_dir: /workspace
+    working_dir: /opt/boxer
     stdin_open: true
     tty: true
     shm_size: "8gb"
@@ -34,7 +37,10 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:
-      - .:/workspace
+      - ./ckpts:/opt/boxer/ckpts
+      - ./sample_data:/opt/boxer/sample_data
+      - ./output:/opt/boxer/output
+      - ./logs:/opt/boxer/logs
     command: bash
     deploy:
       resources:

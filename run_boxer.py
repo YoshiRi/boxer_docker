@@ -86,8 +86,7 @@ def comma_separated_list(value):
     return value.split(",")
 
 
-def main():
-    # fmt: off
+def build_arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, default=DEFAULT_SEQ, help="path to the sequence folder")
     parser.add_argument("--skip_n", type=int, default=1, help="skip n frames")
@@ -113,15 +112,16 @@ def main():
     parser.add_argument("--ckpt", type=str, default=os.path.join(CKPT_PATH, "boxernet_hw960in4x6d768-wssxpf9p.ckpt"), help="path to BoxerNet checkpoint")
     parser.add_argument("--force_precision", type=str, default=None, choices=["float32", "bfloat16"], help="Override auto-detected inference precision")
     parser.add_argument("--output_dir", type=str, default=EVAL_PATH, help="Output directory for results (default: output/)")
-    args = parser.parse_args()
+    return parser
 
+
+def run_with_args(args):
     if args.fuse and args.track:
-        parser.error("--fuse and --track are mutually exclusive")
+        raise ValueError("--fuse and --track are mutually exclusive")
     if args.cache3d:
         args.cache2d = True
     args.viz_headless = not args.skip_viz
     print(args)
-    # fmt: on
 
     DEBUG = os.environ.get("DEBUG", "0") == "1"
     _t_start = time.perf_counter()
@@ -319,7 +319,7 @@ def main():
     video_dir = os.path.join(log_dir, f"{args.write_name}_viz")
     if args.viz_headless:
         safe_delete_folder(
-            video_dir, extensions=[".png"], keep_folder=True, recursive=True
+            video_dir, extensions=[".jpg", ".png"], keep_folder=True, recursive=True
         )
         os.makedirs(video_dir, exist_ok=True)
         print(
@@ -826,6 +826,15 @@ def main():
             track_writer.write(tracked_obbs, timestamps_ns=0, sem_id_to_name=track_sem)
             track_writer.close()
             print(f"==> Saved {len(active_tracks)} tracked OBBs to {track_output_path}")
+
+
+def main(argv=None):
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    try:
+        run_with_args(args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":

@@ -15,6 +15,9 @@ RUN apt-get update \
         ca-certificates \
         curl \
         ffmpeg \
+        git \
+        libgl1 \
+        libglib2.0-0 \
         libgomp1 \
         tini \
         wget \

@@ -50,26 +50,34 @@ Environment overrides:
 EOF
 }
 
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
 download_file() {
   local url="$1"
   local dest="$2"
+  local tmp_dest="${dest}.part"
 
   if [[ -f "$dest" ]]; then
-    echo "Already exists: $dest"
+    log "Already exists: $dest"
     return
   fi
 
   mkdir -p "$(dirname "$dest")"
-  echo "Downloading: $url"
+  rm -f "$tmp_dest"
+  log "Downloading: $url"
 
   if command -v wget >/dev/null 2>&1; then
-    wget -O "$dest" "$url"
+    wget --tries=3 --waitretry=2 --retry-connrefused -O "$tmp_dest" "$url"
   elif command -v curl >/dev/null 2>&1; then
-    curl -fL --retry 3 --retry-delay 2 -o "$dest" "$url"
+    curl -fL --retry 3 --retry-delay 2 -o "$tmp_dest" "$url"
   else
     echo "Missing downloader: install wget or curl." >&2
     exit 1
   fi
+
+  mv "$tmp_dest" "$dest"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -113,7 +121,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if (( DOWNLOAD_CKPTS )); then
-  echo "==> Downloading checkpoints into $CKPT_DIR"
+  log "Downloading checkpoints into $CKPT_DIR"
   mkdir -p "$CKPT_DIR"
   for file in "${CKPT_FILES[@]}"; do
     download_file "${HF_MODEL_BASE}/${file}" "${CKPT_DIR}/${file}"
@@ -121,7 +129,7 @@ if (( DOWNLOAD_CKPTS )); then
 fi
 
 if (( DOWNLOAD_ARIA )); then
-  echo "==> Downloading Aria sample data into $DATA_DIR"
+  log "Downloading Aria sample data into $DATA_DIR"
   mkdir -p "$DATA_DIR"
   declare -A seen=()
   for seq in "${ARIA_SEQS[@]}"; do
@@ -136,6 +144,6 @@ if (( DOWNLOAD_ARIA )); then
   done
 fi
 
-echo "Bootstrap complete."
-echo "  checkpoints: $CKPT_DIR"
-echo "  sample_data: $DATA_DIR"
+log "Bootstrap complete."
+log "  checkpoints: $CKPT_DIR"
+log "  sample_data: $DATA_DIR"

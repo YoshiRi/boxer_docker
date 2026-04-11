@@ -8,10 +8,12 @@ __pycache__
 *.swp
 *.swo
 .DS_Store
+.codex
 
 ckpts
 sample_data
 output
+logs
 
 docs/images
 tests/htmlcov
