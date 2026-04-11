@@ -37,9 +37,7 @@ For a headless, reproducible CPU setup of Demo #1:
 
 ```bash
 make build
-make imports
-./scripts/bootstrap_boxer.sh
-make smoke
+make bootstrap
 make demo1
 ```
 
@@ -47,6 +45,7 @@ Notes:
 
 - The Docker image targets the headless `run_boxer.py` flow. Interactive viewer dependencies are intentionally excluded.
 - `docker-compose.yml` mounts `./ckpts`, `./sample_data`, `./output`, and `./logs` into the container so model assets and run artifacts stay on the host.
+- The Make targets pre-create those host directories before Docker touches them, which avoids bind-mount ownership surprises on a clean checkout.
 - See `docs/runbook.md` for the full Docker runbook, including the GPU profile.
 - See `docs/output_schema.md` for the emitted CSV and artifact schema.
 - See `docs/ros_bridge_plan.md` and `scripts/run_boxer_job.py` for the planned ROS-facing batch interface.

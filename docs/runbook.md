@@ -19,8 +19,7 @@ The compose setup mounts these host paths into `/opt/boxer/`:
 CPU-only image:
 
 ```bash
-mkdir -p ckpts sample_data output logs
-docker compose build boxer
+make build
 ```
 
 CUDA-capable image:
@@ -39,7 +38,7 @@ Notes:
 Minimal bootstrap for Demo #1:
 
 ```bash
-./scripts/bootstrap_boxer.sh
+make bootstrap
 ```
 
 That downloads:
@@ -65,12 +64,14 @@ Download only sample data:
 ./scripts/bootstrap_boxer.sh --data-only --aria-seq nym10_gen1
 ```
 
+The `Makefile` pre-creates `ckpts/`, `sample_data/`, `output/`, and `logs/` before Docker uses them. This avoids a host-permission issue where Docker may otherwise create those bind-mount directories itself.
+
 ## 3. Sanity-check imports inside the container
 
 CPU:
 
 ```bash
-docker compose run --rm boxer python -c "import torch, cv2, dill, tqdm, projectaria_tools; print('imports ok')"
+make imports
 ```
 
 GPU:
@@ -97,6 +98,14 @@ To capture a persistent host-side log for the CPU run:
 
 ```bash
 make demo1-log
+```
+
+Three-command happy path for a clean checkout:
+
+```bash
+make build
+make bootstrap
+make demo1
 ```
 
 ## 5. Output locations on the host
