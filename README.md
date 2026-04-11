@@ -41,14 +41,47 @@ make bootstrap
 make demo1
 ```
 
+To capture a persistent host-side log:
+
+```bash
+make demo1-log
+```
+
 Notes:
 
 - The Docker image targets the headless `run_boxer.py` flow. Interactive viewer dependencies are intentionally excluded.
 - `docker-compose.yml` mounts `./ckpts`, `./sample_data`, `./output`, and `./logs` into the container so model assets and run artifacts stay on the host.
 - The Make targets pre-create those host directories before Docker touches them, which avoids bind-mount ownership surprises on a clean checkout.
+- The container runs the code baked into the image, not a live source bind mount. After changing Python code or docs used inside the image, rebuild with `make build` before rerunning Docker commands.
 - See `docs/runbook.md` for the full Docker runbook, including the GPU profile.
 - See `docs/output_schema.md` for the emitted CSV and artifact schema.
 - See `docs/ros_bridge_plan.md` and `scripts/run_boxer_job.py` for the planned ROS-facing batch interface.
+
+## Validated Docker Demo
+
+The Dockerized CPU path has been validated end-to-end with:
+
+```bash
+python run_boxer.py --input nym10_gen1 --max_n=90 --track
+```
+
+Observed outputs from the validated run:
+
+- `logs/demo1.log`
+- `output/nym10_gen1/boxer_3dbbs.csv`
+- `output/nym10_gen1/owl_2dbbs.csv`
+- `output/nym10_gen1/boxer_3dbbs_tracked.csv`
+- `output/nym10_gen1/boxer_viz_current.jpg`
+- `output/nym10_gen1/boxer_viz_final.mp4`
+
+Observed artifact counts for Demo #1:
+
+- `boxer_3dbbs.csv`: 2201 rows
+- `owl_2dbbs.csv`: 2281 rows
+- `boxer_3dbbs_tracked.csv`: 71 rows
+- `boxer_viz/`: 90 JPG frames
+
+Observed runtime for the validated CPU Docker run was about 9 minutes 42 seconds for 90 frames. This is much slower than MPS or CUDA execution and should be treated as a correctness path, not a fast path.
 
 ## Download Model Checkpoints
 
@@ -84,6 +117,18 @@ python run_boxer.py --input nym10_gen1 --max_n=90 --track
 This will dump out static images and a video to `output/nym10_gen1/`, e.g. something like this in `output/nym10_gen1/boxer_viz_current.jpg`
 
 ![Run Boxer Demo](docs/images/boxer_viz_current_hohen_gen1.jpg)
+
+For the Dockerized headless path, prefer:
+
+```bash
+make demo1
+```
+
+or, if you want a saved log:
+
+```bash
+make demo1-log
+```
 
 ## Demo #2: BoxerNet Interactive Demo on Aria Data
 For this demo, you need to have a valid display to have the GUI work. This demo allows you to create 2DBB prompts and enter text to prompt OWL to detect objects. Run it like:
@@ -211,6 +256,31 @@ Results are written to `output/<sequence_name>/`:
 - `boxer_3dbbs_tracked.csv` — tracked 3D boxes (with `--track`)
 - `boxer_viz_current.jpg` — latest rendered frame
 - `boxer_viz_final.mp4` — visualization video
+
+For a validated schema walkthrough and concrete Demo #1 counts, see `docs/output_schema.md`.
+
+## Batch Wrapper
+
+For downstream integration and future ROS handoff, use the batch wrapper instead of shelling out to the CLI directly:
+
+```bash
+python scripts/run_boxer_job.py \
+  --input nym10_gen1 \
+  --max_n 90 \
+  --track \
+  --manifest output/nym10_gen1/job_manifest.json
+```
+
+The wrapper still runs Boxer inference, but it also writes a JSON manifest that records:
+
+- requested inputs
+- resolved output directory
+- artifact existence
+- artifact sizes
+- CSV row counts
+- job timing metadata
+
+See `docs/ros_bridge_plan.md` for the intended ROS-side contract.
 
 ### CLI Reference
 
