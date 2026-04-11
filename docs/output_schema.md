@@ -16,6 +16,12 @@ For Demo #1:
 
 - `output/nym10_gen1/`
 
+Validated from an actual Docker run of:
+
+```bash
+python run_boxer.py --input nym10_gen1 --max_n=90 --track
+```
+
 ## Artifact inventory
 
 Produced by `run_boxer.py` in headless mode:
@@ -32,6 +38,13 @@ Produced by `run_boxer.py` in headless mode:
   Video assembled from intermediate JPG frames with `ffmpeg`.
 - `boxer_viz/boxer_viz_*.jpg`
   Intermediate rendered frames used to create the MP4.
+
+Observed for Demo #1:
+
+- `boxer_3dbbs.csv`: 2201 rows
+- `owl_2dbbs.csv`: 2281 rows
+- `boxer_3dbbs_tracked.csv`: 71 rows
+- `boxer_viz/`: 90 JPG frames (`boxer_viz_00000.jpg` to `boxer_viz_00089.jpg`)
 
 ## `boxer_3dbbs.csv`
 
@@ -69,6 +82,11 @@ Notes for ROS integration:
 - This file is the best base for emitting 3D detection messages per frame.
 - It is world-frame data already, not camera-frame box parameters.
 
+Observed for Demo #1:
+
+- 2201 detections across 90 unique frame timestamps
+- timestamp range: `677220309225` to `686120312100` ns
+
 ## `boxer_3dbbs_tracked.csv`
 
 Writer implementation:
@@ -91,6 +109,11 @@ ROS implication:
 
 - This file is useful as a compact summary of the final tracker state.
 - It is not a full per-frame tracked history stream.
+
+Observed for Demo #1:
+
+- 71 final active tracks were written
+- `time_ns` is `0` for every row, so this file should be treated as an end-of-run snapshot, not a timed stream
 
 ## `owl_2dbbs.csv`
 
@@ -132,6 +155,12 @@ Notes for ROS integration:
 - This file provides image-space detections aligned with the rendered RGB view.
 - It can be paired with `time_ns` for synchronization with future ROS topics.
 
+Observed for Demo #1:
+
+- 2281 detections across 90 unique frames
+- `frame_id` runs from `0` to `89`
+- `sensor` was `rgb` and `device` was `Aria Gen 1` for the whole run
+
 ## Visualization outputs
 
 Current implementation details:
@@ -139,6 +168,7 @@ Current implementation details:
 - Per-frame images are JPGs, not PNGs.
 - MP4 creation depends on `ffmpeg`.
 - `boxer_viz_current.jpg` is overwritten every frame.
+- In the validated Demo #1 run, `boxer_viz_final.mp4` and all 90 intermediate JPGs were generated successfully.
 
 ROS implication:
 
