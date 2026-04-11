@@ -47,12 +47,22 @@ To capture a persistent host-side log:
 make demo1-log
 ```
 
+For the NVIDIA GPU path:
+
+```bash
+make build-gpu
+make bootstrap
+make demo1-gpu
+```
+
 Notes:
 
 - The Docker image targets the headless `run_boxer.py` flow. Interactive viewer dependencies are intentionally excluded.
 - `docker-compose.yml` mounts `./ckpts`, `./sample_data`, `./output`, and `./logs` into the container so model assets and run artifacts stay on the host.
 - The Make targets pre-create those host directories before Docker touches them, which avoids bind-mount ownership surprises on a clean checkout.
-- The container runs the code baked into the image, not a live source bind mount. After changing Python code or docs used inside the image, rebuild with `make build` before rerunning Docker commands.
+- The container runs the code baked into the image, not a live source bind mount. After changing Python code or docs used inside the image, rebuild the relevant image with `make build` or `make build-gpu` before rerunning Docker commands.
+- The GPU image includes a C/C++ toolchain because `torch.compile` on CUDA uses Triton JIT and needs a compiler at runtime.
+- The GPU path assumes a host with a working NVIDIA driver stack and Docker GPU support.
 - See `docs/runbook.md` for the full Docker runbook, including the GPU profile.
 - See `docs/output_schema.md` for the emitted CSV and artifact schema.
 - See `docs/ros_bridge_plan.md` and `scripts/run_boxer_job.py` for the planned ROS-facing batch interface.
@@ -82,6 +92,31 @@ Observed artifact counts for Demo #1:
 - `boxer_viz/`: 90 JPG frames
 
 Observed runtime for the validated CPU Docker run was about 9 minutes 42 seconds for 90 frames. This is much slower than MPS or CUDA execution and should be treated as a correctness path, not a fast path.
+
+The Dockerized GPU path has also been validated end-to-end with:
+
+```bash
+docker compose --profile gpu run --rm boxer-gpu \
+  python run_boxer.py --input nym10_gen1 --max_n=90 --track \
+  --output_dir output/gpu_validation_ok --write_name boxer_gpu
+```
+
+Observed outputs from the validated GPU run:
+
+- `output/gpu_validation_ok/nym10_gen1/boxer_gpu_3dbbs.csv`
+- `output/gpu_validation_ok/nym10_gen1/owl_2dbbs.csv`
+- `output/gpu_validation_ok/nym10_gen1/boxer_gpu_3dbbs_tracked.csv`
+- `output/gpu_validation_ok/nym10_gen1/boxer_gpu_viz_current.jpg`
+- `output/gpu_validation_ok/nym10_gen1/boxer_gpu_viz_final.mp4`
+
+Observed artifact counts for the validated GPU run:
+
+- `boxer_gpu_3dbbs.csv`: 1975 rows
+- `owl_2dbbs.csv`: 2036 rows
+- `boxer_gpu_3dbbs_tracked.csv`: 64 rows
+- `boxer_gpu_viz/`: 90 JPG frames
+
+Observed runtime for the validated GPU Docker run was about 1 minute 2 seconds for 90 frames on an NVIDIA GeForce RTX 3060 Laptop GPU with driver `575.57.08`. A container-side check also confirmed `torch.cuda.is_available() == True`.
 
 ## Download Model Checkpoints
 

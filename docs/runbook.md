@@ -32,6 +32,7 @@ Notes:
 
 - The GPU path assumes Docker is configured with NVIDIA Container Toolkit.
 - The GPU service switches the PyTorch wheel index to CUDA wheels but does not vendor CUDA inside this repo.
+- The GPU image includes `build-essential` because Triton-backed `torch.compile` needs a C compiler at runtime.
 
 ## 2. Download checkpoints and sample data
 
@@ -80,6 +81,12 @@ GPU:
 docker compose --profile gpu run --rm boxer-gpu python -c "import torch; print(torch.cuda.is_available())"
 ```
 
+Expected healthy output on a working host is `True`. A fuller check is:
+
+```bash
+docker compose --profile gpu run --rm boxer-gpu python -c "import torch; print(torch.cuda.is_available(), torch.cuda.device_count(), torch.version.cuda)"
+```
+
 ## 4. Run Demo #1 in Docker
 
 CPU:
@@ -93,6 +100,12 @@ GPU:
 ```bash
 make demo1-gpu
 ```
+
+Validated GPU result in this repo:
+
+- Output root: `output/gpu_validation_ok/nym10_gen1/`
+- Runtime: about 1 minute 2 seconds for 90 frames
+- Artifacts: 90 JPG frames, CSV outputs, tracked CSV, final MP4
 
 To capture a persistent host-side log for the CPU run:
 

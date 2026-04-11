@@ -5,6 +5,7 @@
 # pyre-unsafe
 import io
 import os
+import shutil
 import time
 
 import torch
@@ -253,7 +254,17 @@ class OwlWrapper(nn.Module):
         else:
             self.vision_detector.to(device=device)
         self.vision_detector.eval()
-        if device == "cuda":
+        enable_torch_compile = device == "cuda" and os.environ.get(
+            "BOXER_DISABLE_TORCH_COMPILE", ""
+        ).lower() not in {"1", "true", "yes"}
+        if enable_torch_compile:
+            compiler = os.environ.get("CC") or shutil.which("cc") or shutil.which("gcc")
+            if compiler is None:
+                print(
+                    "==> Warning: no C compiler found; disabling torch.compile for OWLv2"
+                )
+                enable_torch_compile = False
+        if enable_torch_compile:
             self.vision_detector = torch.compile(self.vision_detector)
         _dbg("vision_detector")
 
