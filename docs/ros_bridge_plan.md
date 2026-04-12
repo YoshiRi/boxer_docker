@@ -1,6 +1,6 @@
 # Boxer ROS Bridge Plan
 
-This document defines the batch I/O boundary for later ROS integration without turning Boxer itself into a ROS package yet.
+This document defines the current ROS-facing I/O boundary without turning Boxer itself into a ROS package yet.
 
 ## Wrapper entrypoint
 
@@ -39,7 +39,9 @@ result = run_boxer_job(
 Minimum required input:
 
 - `input_path`
-  Boxer sequence identifier or path, same semantics as `run_boxer.py --input`
+  Boxer sequence identifier, file path, video path, or ROS topic name depending on `input_mode`
+- `input_mode`
+  One of the `run_boxer.py` source adapters: dataset loader, `file`, `cv2`, or `ros2`
 
 Optional control fields:
 
@@ -51,10 +53,22 @@ Optional control fields:
 - `fuse`
 - `labels`
 - `camera`
+- `camera_width`
+- `camera_height`
+- `camera_fx`
+- `camera_fy`
+- `camera_cx`
+- `camera_cy`
+- `frame_period_ns`
+- `start_time_ns`
+- `stream_name`
+- `input_glob`
+- `input_metadata`
+- `ros_compressed`
 - `force_cpu`
 - `skip_viz`
 
-This is intentionally a batch job contract, not a frame-by-frame streaming API.
+This is still primarily a batch job contract even though `run_boxer.py` can now ingest live ROS 2 frames through the source adapter layer.
 
 ## Output contract
 
@@ -110,17 +124,33 @@ Example manifest shape:
 Recommended boundary for a future ROS 2 package:
 
 - service or action request
-  Input: sequence path, labels, thresholds, runtime flags
+  Input: source mode, source identifier, labels, thresholds, runtime flags, optional camera intrinsics
 - job worker
   Calls `run_boxer_job(...)` in-process
+- optional live worker
+  Calls `run_boxer.py --input_mode ros2 ...` or a future extracted long-lived runner
 - published outputs
   `owl_2dbbs.csv` -> `vision_msgs/Detection2DArray`
   `boxer_3dbbs.csv` -> custom or derived 3D detection message
   `boxer_3dbbs_tracked.csv` -> tracked object topic
   `boxer_viz_current.jpg` -> debug image topic
 
+## Current status
+
+Implemented now:
+
+- batch wrapper import surface via `run_boxer_job(...)`
+- JSON manifest output
+- flexible input adapters in `run_boxer.py`, including a ROS 2 image-topic source
+
+Still missing:
+
+- ROS-side message publication
+- camera-info topic ingestion
+- package layout, launch files, and colcon integration
+- full runtime validation of the ROS 2 adapter in a ROS-enabled environment
+
 ## Non-goals for this stage
 
-- real-time camera subscription
 - direct ROS message emission inside Boxer core
 - ROS package layout, launch files, or colcon integration

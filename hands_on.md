@@ -11,9 +11,10 @@ This hands-on covers:
 - running a validated headless demo
 - downloading and running an additional sample sequence locally
 - fixing ownership of Docker-generated artifacts on the host
+- exercising the flexible `file` / `cv2` / `ros2` input interface
 - understanding what "stream input" means in the current codebase
 
-It does not cover ROS package wiring, launch files, or direct ROS topic subscription.
+It does not cover ROS package wiring, launch files, or colcon packaging.
 
 ## 1. Prerequisites
 
@@ -198,11 +199,92 @@ This is not supported yet.
 
 Current constraints:
 
-- `run_boxer.py` accepts a dataset name or local sequence path, not a live socket/topic/camera handle
-- `scripts/run_boxer_job.py` is explicitly batch-oriented
-- `docs/ros_bridge_plan.md` lists real-time subscription as a non-goal for the current stage
+- the ROS 2 adapter still assumes static camera intrinsics are provided by CLI or side metadata
+- `scripts/run_boxer_job.py` is still batch-oriented even though the underlying frame source can now be live
+- there is no ROS-side publisher or launch package in this repo
 
-## 6. Minimal Path to a Non-ROS Stream Demo
+## 6. Flexible Input Interface
+
+`run_boxer.py` now resolves inputs through a common frame-source layer. The new input modes are:
+
+- `aria`, `ca1m`, `omni3d`, `scannet` for the original dataset loaders
+- `file` for a single image or image directory replay
+- `cv2` for an OpenCV `VideoCapture` source such as a video file, webcam index, or RTSP URL
+- `ros2` for `sensor_msgs/Image` or `sensor_msgs/CompressedImage`
+
+The same interface is exposed through `scripts/run_boxer_job.py`.
+
+### 6.1 Validated `file` replay smoke
+
+This was validated in Docker GPU against a host-mounted JPG:
+
+```bash
+docker compose --profile gpu run --rm \
+  -v "$PWD:/opt/boxer" \
+  boxer-gpu \
+  python run_boxer.py \
+    --input_mode file \
+    --input /opt/boxer/output/downloaded_samples/cook0_gen2/cook0_gpu_viz_current.jpg \
+    --max_n 1 \
+    --skip_viz \
+    --output_dir output/interface_smoke \
+    --write_name file_source_smoke
+```
+
+Observed outputs:
+
+- `output/interface_smoke/cook0_gpu_viz_current_jpg/file_source_smoke_3dbbs.csv`
+- `output/interface_smoke/cook0_gpu_viz_current_jpg/owl_2dbbs.csv`
+
+### 6.2 Validated `cv2` replay smoke
+
+This was validated in Docker GPU against a host-mounted MP4:
+
+```bash
+docker compose --profile gpu run --rm \
+  -v "$PWD:/opt/boxer" \
+  boxer-gpu \
+  python run_boxer.py \
+    --input_mode cv2 \
+    --input /opt/boxer/output/downloaded_samples/cook0_gen2/cook0_gpu_viz_final.mp4 \
+    --max_n 1 \
+    --skip_viz \
+    --output_dir output/interface_smoke \
+    --write_name cv2_source_smoke
+```
+
+Observed outputs:
+
+- `output/interface_smoke/cv2__opt_boxer_output_downloaded_samples_cook0_gen2_cook0_gpu_viz_final_mp4/cv2_source_smoke_3dbbs.csv`
+- `output/interface_smoke/cv2__opt_boxer_output_downloaded_samples_cook0_gen2_cook0_gpu_viz_final_mp4/owl_2dbbs.csv`
+
+### 6.3 ROS 2 adapter shape
+
+The ROS 2 adapter is present but not runtime-validated in this repo snapshot. It expects `rclpy` and `sensor_msgs` to exist in the runtime environment.
+
+Minimal invocation shape:
+
+```bash
+python run_boxer.py \
+  --input_mode ros2 \
+  --input /camera/image_raw \
+  --camera_width 1280 \
+  --camera_height 720 \
+  --camera_fx 900 \
+  --camera_fy 900 \
+  --camera_cx 640 \
+  --camera_cy 360 \
+  --frame_period_ns 33333333 \
+  --max_n 300
+```
+
+If the topic uses `sensor_msgs/CompressedImage`, add:
+
+```bash
+--ros_compressed
+```
+
+## 7. Minimal Path to a Non-ROS Stream Demo
 
 If the goal is "show Boxer consuming a stream-like source" without implementing ROS yet, the shortest path is:
 
@@ -238,7 +320,7 @@ Resulting files to watch:
 
 This is still batch over a finite replay window, but it is the closest supported demo to a stream-processing workflow.
 
-## 7. What Must Be Added for True Live Streaming
+## 8. What Must Be Added for True Live Streaming
 
 For an actual live stream demo, the missing piece is an adapter layer between the live source and Boxer.
 

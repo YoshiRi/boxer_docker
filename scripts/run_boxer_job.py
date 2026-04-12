@@ -13,15 +13,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from input_sources import infer_sequence_name
 from run_boxer import build_arg_parser, run_with_args
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def _sequence_name(input_path: str) -> str:
-    return os.path.basename(input_path.rstrip("/"))
 
 
 def _count_csv_rows(path: Path) -> int | None:
@@ -62,7 +59,7 @@ def _artifact_records(output_root: Path, write_name: str, track: bool) -> list[d
 
 
 def build_job_manifest(args, *, run_started_at: str | None = None, duration_sec: float | None = None) -> dict[str, Any]:
-    seq_name = _sequence_name(args.input)
+    seq_name = infer_sequence_name(args)
     output_root = Path(os.path.expanduser(args.output_dir)) / seq_name
     artifacts = _artifact_records(output_root, args.write_name, args.track)
     return {
@@ -76,12 +73,24 @@ def build_job_manifest(args, *, run_started_at: str | None = None, duration_sec:
             "input_path": args.input,
             "output_dir": str(Path(os.path.expanduser(args.output_dir))),
             "write_name": args.write_name,
+            "input_mode": args.input_mode,
+            "input_glob": args.input_glob,
+            "input_metadata": args.input_metadata,
             "max_n": args.max_n,
             "start_n": args.start_n,
             "skip_n": args.skip_n,
             "track": args.track,
             "fuse": args.fuse,
             "camera": args.camera,
+            "camera_width": args.camera_width,
+            "camera_height": args.camera_height,
+            "camera_fx": args.camera_fx,
+            "camera_fy": args.camera_fy,
+            "camera_cx": args.camera_cx,
+            "camera_cy": args.camera_cy,
+            "frame_period_ns": args.frame_period_ns,
+            "start_time_ns": args.start_time_ns,
+            "stream_name": args.stream_name,
             "labels": args.labels,
             "force_cpu": args.force_cpu,
             "skip_viz": args.skip_viz,

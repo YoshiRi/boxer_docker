@@ -65,7 +65,62 @@ Notes:
 - The GPU path assumes a host with a working NVIDIA driver stack and Docker GPU support.
 - See `docs/runbook.md` for the full Docker runbook, including the GPU profile.
 - See `docs/output_schema.md` for the emitted CSV and artifact schema.
+- See `docs/input_interface.md` for the flexible `file` / `cv2` / `ros2` input adapter design.
 - See `docs/ros_bridge_plan.md` and `scripts/run_boxer_job.py` for the planned ROS-facing batch interface.
+
+## Flexible Input Interface
+
+`run_boxer.py` and `scripts/run_boxer_job.py` now accept multiple input adapters behind a common frame-source interface:
+
+- `aria`, `ca1m`, `omni3d`, `scannet`: existing dataset loaders
+- `file`: a single image or image directory replay
+- `cv2`: OpenCV-backed video file, camera index, or stream URL
+- `ros2`: ROS 2 `sensor_msgs/Image` or `sensor_msgs/CompressedImage` subscription
+
+Validated Docker GPU examples:
+
+```bash
+docker compose --profile gpu run --rm \
+  -v "$PWD:/opt/boxer" \
+  boxer-gpu \
+  python run_boxer.py \
+    --input_mode file \
+    --input /opt/boxer/output/downloaded_samples/cook0_gen2/cook0_gpu_viz_current.jpg \
+    --max_n 1 \
+    --skip_viz \
+    --output_dir output/interface_smoke \
+    --write_name file_source_smoke
+```
+
+```bash
+docker compose --profile gpu run --rm \
+  -v "$PWD:/opt/boxer" \
+  boxer-gpu \
+  python run_boxer.py \
+    --input_mode cv2 \
+    --input /opt/boxer/output/downloaded_samples/cook0_gen2/cook0_gpu_viz_final.mp4 \
+    --max_n 1 \
+    --skip_viz \
+    --output_dir output/interface_smoke \
+    --write_name cv2_source_smoke
+```
+
+ROS 2 example shape:
+
+```bash
+python run_boxer.py \
+  --input_mode ros2 \
+  --input /camera/image_raw \
+  --ros_compressed \
+  --camera_width 1280 \
+  --camera_height 720 \
+  --camera_fx 900 \
+  --camera_fy 900 \
+  --camera_cx 640 \
+  --camera_cy 360
+```
+
+The ROS 2 adapter is implemented, but only `file` and `cv2` paths were runtime-validated in this repo. The ROS 2 path requires `rclpy` and `sensor_msgs` in the execution environment.
 
 ## Validated Docker Demo
 
