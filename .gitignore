@@ -30,6 +30,7 @@ ckpts/
 
 # Sample data
 sample_data/
+downloaded_sample_data/
 
 # Visualization output
 output/
