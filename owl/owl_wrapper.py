@@ -257,6 +257,11 @@ class OwlWrapper(nn.Module):
         enable_torch_compile = device == "cuda" and os.environ.get(
             "BOXER_DISABLE_TORCH_COMPILE", ""
         ).lower() not in {"1", "true", "yes"}
+        if enable_torch_compile and not hasattr(torch, "compile"):
+            print(
+                "==> Warning: torch.compile is unavailable in this PyTorch build; disabling it for OWLv2"
+            )
+            enable_torch_compile = False
         if enable_torch_compile:
             compiler = os.environ.get("CC") or shutil.which("cc") or shutil.which("gcc")
             if compiler is None:

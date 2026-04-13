@@ -122,6 +122,40 @@ python run_boxer.py \
 
 The ROS 2 adapter is implemented, but only `file` and `cv2` paths were runtime-validated in this repo. The ROS 2 path requires `rclpy` and `sensor_msgs` in the execution environment.
 
+## Minimal Web UI
+
+A minimal batch web UI is available at [webui/server.py](webui/server.py). It supports:
+
+- running local `sample_data/` sequences
+- uploading a single image or video
+- launching `run_boxer_job.py` in the background
+- browsing emitted CSV, JPG, MP4, and manifest artifacts
+
+Start it from the repo root:
+
+```bash
+make webui
+```
+
+For the validated GPU-backed path:
+
+```bash
+make webui-gpu
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000
+```
+
+Current constraints:
+
+- jobs are serialized to one inference run at a time
+- the UI is batch-oriented, not a live websocket stream
+- uploaded files are staged under `webui_uploads/`
+- `make webui` uses the CPU Docker service, `make webui-gpu` uses the GPU Docker service, and `make webui-local` runs inference in the host Python environment
+
 ## Validated Docker Demo
 
 The Dockerized CPU path has been validated end-to-end with:

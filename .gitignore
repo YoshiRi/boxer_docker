@@ -35,6 +35,7 @@ downloaded_sample_data/
 # Visualization output
 output/
 logs/
+webui_uploads/
 
 # ImGui
 imgui.ini

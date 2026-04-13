@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: prepare-dirs bootstrap bootstrap-all build build-gpu compose-config imports smoke shell shell-gpu demo demo-gpu demo1 demo1-gpu demo1-log
+.PHONY: prepare-dirs bootstrap bootstrap-all build build-gpu compose-config imports smoke shell shell-gpu demo demo-gpu demo1 demo1-gpu demo1-log webui webui-gpu webui-local
 
 prepare-dirs:
 	mkdir -p ckpts sample_data output logs
@@ -47,3 +47,12 @@ demo:
 
 demo-gpu:
 	$(MAKE) demo1-gpu
+
+webui: prepare-dirs
+	python3 -m webui.server --runner docker
+
+webui-gpu: prepare-dirs
+	python3 -m webui.server --runner docker-gpu
+
+webui-local: prepare-dirs
+	python3 -m webui.server
