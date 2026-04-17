@@ -7,7 +7,6 @@
 # pyre-unsafe
 import argparse
 import os
-import re
 import time
 
 import cv2
@@ -16,14 +15,17 @@ import torch
 from tqdm import tqdm
 
 from boxernet.boxernet import BoxerNet
-from loaders.ca_loader import CALoader
-from loaders.omni_loader import OMNI3D_DATASETS, OmniLoader
-from loaders.scannet_loader import ScanNetLoader
+from input_sources import (
+    add_frame_source_args,
+    infer_input_mode,
+    infer_sequence_name,
+    resolve_input_source,
+    source_length,
+)
 from utils.demo_utils import (
     CKPT_PATH,
     DEFAULT_SEQ,
     EVAL_PATH,
-    SAMPLE_DATA_PATH,
     CudaTimer,
 )
 from utils.file_io import ObbCsvWriter2, load_bb2d_csv, read_obb_csv, save_bb2d_csv
@@ -86,10 +88,10 @@ def comma_separated_list(value):
     return value.split(",")
 
 
-def main():
-    # fmt: off
+def build_arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, default=DEFAULT_SEQ, help="path to the sequence folder")
+    add_frame_source_args(parser)
     parser.add_argument("--skip_n", type=int, default=1, help="skip n frames")
     parser.add_argument("--start_n", type=int, default=1, help="start from n-th frame")
     parser.add_argument("--max_n", type=int, default=99999, help="run for max n frames")
@@ -113,15 +115,16 @@ def main():
     parser.add_argument("--ckpt", type=str, default=os.path.join(CKPT_PATH, "boxernet_hw960in4x6d768-wssxpf9p.ckpt"), help="path to BoxerNet checkpoint")
     parser.add_argument("--force_precision", type=str, default=None, choices=["float32", "bfloat16"], help="Override auto-detected inference precision")
     parser.add_argument("--output_dir", type=str, default=EVAL_PATH, help="Output directory for results (default: output/)")
-    args = parser.parse_args()
+    return parser
 
+
+def run_with_args(args):
     if args.fuse and args.track:
-        parser.error("--fuse and --track are mutually exclusive")
+        raise ValueError("--fuse and --track are mutually exclusive")
     if args.cache3d:
         args.cache2d = True
     args.viz_headless = not args.skip_viz
     print(args)
-    # fmt: on
 
     DEBUG = os.environ.get("DEBUG", "0") == "1"
     _t_start = time.perf_counter()
@@ -138,28 +141,8 @@ def main():
         )
         _t_prev = now
 
-    # Determine dataset type and seq_name from input string
-    if bool(re.search(r"scene\d{4}_\d{2}", args.input)) or "/scannet/" in args.input:
-        dataset_type = "scannet"
-        seq_name = os.path.basename(args.input.rstrip("/"))
-    elif args.input in OMNI3D_DATASETS:
-        dataset_type = "omni3d"
-        seq_name = args.input
-    elif args.input.startswith("ca1m"):
-        dataset_type = "ca1m"
-        seq_name = args.input
-    else:
-        dataset_type = "aria"
-        remote_root = args.input
-        # Resolve bare sequence names: try sample_data/ first, then ~/boxy_data/
-        if not os.path.isabs(remote_root) and not os.path.exists(remote_root):
-            sample = os.path.join(SAMPLE_DATA_PATH, remote_root)
-            legacy = os.path.expanduser(os.path.join("~/boxy_data", remote_root))
-            if os.path.exists(sample):
-                remote_root = sample
-            elif os.path.exists(legacy):
-                remote_root = legacy
-        seq_name = remote_root.rstrip("/").split("/")[-1]
+    input_mode = infer_input_mode(args)
+    seq_name = infer_sequence_name(args, input_mode=input_mode)
 
     # get name of containing directory
     output_dir = os.path.expanduser(args.output_dir)
@@ -193,26 +176,13 @@ def main():
             )
         return
 
-    # Create data loader
-    if dataset_type == "scannet":
-        loader = ScanNetLoader(
-            scene_dir=args.input,
-            annotation_path=os.path.join(
-                SAMPLE_DATA_PATH, "scannet", "full_annotations.json"
-            ),
-            skip_frames=args.skip_n,
-            max_frames=args.max_n,
-            start_frame=args.start_n,
-        )
-        seq_name = loader.scene_id
-    elif dataset_type == "omni3d":
+    resolved_source = resolve_input_source(args)
+    source = resolved_source.source
+    source_kind = resolved_source.kind
+    if source_kind == "aria":
+        print(f"==> Sequence name: '{resolved_source.sequence_name}'")
+    elif source_kind == "omni3d":
         print(f"==> Loading Omni3D dataset: {args.input} (val)")
-        loader = OmniLoader(
-            dataset_name=args.input,
-            split="val",
-            max_images=args.max_n,
-            skip_images=args.skip_n,
-        )
         # Disable fusion for Omni3D (single images, not video)
         if args.fuse:
             print(
@@ -224,33 +194,13 @@ def main():
                 "==> Warning: --track is disabled for Omni3D (single images, not video)"
             )
             args.track = False
-    elif dataset_type == "ca1m":
-        loader = CALoader(
-            seq_name,
-            start_frame=args.start_n,
-            skip_frames=args.skip_n,
-            max_frames=args.max_n,
-            resize=(args.detector_hw, args.detector_hw),
-        )
-    else:
-        from loaders.aria_loader import AriaLoader
-
-        print(f"==> Sequence name: '{seq_name}'")
-        loader = AriaLoader(
-            remote_root,
-            camera=args.camera,
-            with_traj=True,
-            with_sdp=True,
-            with_obb=args.gt2d,
-            pinhole=args.pinhole,
-            resize=None,
-            unrotate=False,
-            skip_n=args.skip_n,
-            max_n=args.max_n,
-            start_n=args.start_n,
+    elif source_kind in {"file", "cv2", "ros2"}:
+        print(
+            f"==> Using {source_kind} frame source '{source.sequence_name}' "
+            f"(camera={source.camera}, device={source.device_name})"
         )
 
-    _dbg("loader")
+    _dbg("source")
 
     # choose a model checkpoint
     if torch.backends.mps.is_available() and not args.force_cpu:
@@ -297,11 +247,9 @@ def main():
     _dbg("owl")
 
     boxernet = BoxerNet.load_from_checkpoint(args.ckpt, device=device)
-    loader.resize = boxernet.hw
-    # Re-trigger prefetch so the first frame uses the correct resize.
-    loader.index = 0
-    loader._init_prefetch()
-    print(f"==> Will resize images to {loader.resize}x{loader.resize} for boxernet")
+    source.set_resize(boxernet.hw)
+    source.reset()
+    print(f"==> Will resize images to {boxernet.hw}x{boxernet.hw} for boxernet")
     _dbg("boxernet")
 
     # Print model architecture
@@ -319,7 +267,7 @@ def main():
     video_dir = os.path.join(log_dir, f"{args.write_name}_viz")
     if args.viz_headless:
         safe_delete_folder(
-            video_dir, extensions=[".png"], keep_folder=True, recursive=True
+            video_dir, extensions=[".jpg", ".png"], keep_folder=True, recursive=True
         )
         os.makedirs(video_dir, exist_ok=True)
         print(
@@ -336,7 +284,11 @@ def main():
     }
 
     if args.gt2d:
-        sem_name_to_id = loader.sem_name_to_id
+        if not hasattr(source, "sem_name_to_id"):
+            raise ValueError(
+                "--gt2d requires a source that provides sem_name_to_id / ground-truth OBBs"
+            )
+        sem_name_to_id = source.sem_name_to_id
         sem_id_to_name = {val: key for key, val in sem_name_to_id.items()}
     else:
         sem_name_to_id = {label: i for i, label in enumerate(text_labels)}
@@ -374,22 +326,25 @@ def main():
 
     timestamps_ns = []  # Collect timestamps to compute FPS
     timer = CudaTimer(device)
-    pbar = tqdm(range(len(loader)), desc="BoxerNet")
+    pbar = tqdm(total=source_length(source), desc="BoxerNet")
     DEBUG_VIZ = os.environ.get("DEBUG_VIZ", "0") == "1"
     _dbg("ready")
 
-    for ii in pbar:
+    ii = 0
+    while True:
         # Data loading
         timer.start("load")
         if DEBUG_VIZ:
             _tl0 = time.perf_counter()
         try:
-            datum = next(loader)
+            datum = next(source)
         except StopIteration:
             break
 
         if datum is False:
             pbar.set_postfix_str("Skipped (time misalignment)")
+            pbar.update(1)
+            ii += 1
             continue
 
         if DEBUG_VIZ:
@@ -568,10 +523,8 @@ def main():
                 time_ns=time_ns,
                 img_width=WW,
                 img_height=HH,
-                sensor=loader.camera if hasattr(loader, "camera") else "unknown",
-                device=loader.device_name
-                if hasattr(loader, "device_name")
-                else "unknown",
+                sensor=source.camera if hasattr(source, "camera") else "unknown",
+                device=source.device_name if hasattr(source, "device_name") else "unknown",
             )
         t_csv = timer.stop("csv")
 
@@ -698,7 +651,7 @@ def main():
             )
             put_text(
                 viz_3d,
-                f"Device: '{loader.device_name}', Camera: '{loader.camera}'",
+                f"Device: '{source.device_name}', Camera: '{source.camera}'",
                 scale=0.5,
                 line=-1,
             )
@@ -768,6 +721,11 @@ def main():
         if args.viz_headless:
             timing_str += f" viz:{t_viz:.0f}ms"
         pbar.set_postfix_str(f"{len(bb2d)} 2D, {obb_pr_w.shape[0]} 3D | " + timing_str)
+        pbar.update(1)
+        ii += 1
+
+    pbar.close()
+    source.close()
 
     if writer is not None:
         writer.close()
@@ -776,7 +734,7 @@ def main():
 
     if args.viz_headless:
         # Calculate FPS from RGB timestamps
-        if dataset_type in ("omni3d", "scannet"):
+        if source_kind in ("omni3d", "scannet"):
             # Omni3D/ScanNet: no real nanosecond timestamps, use fixed framerate
             fps = 10
         elif len(timestamps_ns) >= 2:
@@ -826,6 +784,15 @@ def main():
             track_writer.write(tracked_obbs, timestamps_ns=0, sem_id_to_name=track_sem)
             track_writer.close()
             print(f"==> Saved {len(active_tracks)} tracked OBBs to {track_output_path}")
+
+
+def main(argv=None):
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    try:
+        run_with_args(args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":

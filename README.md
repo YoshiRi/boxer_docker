@@ -31,6 +31,182 @@ uv pip install projectaria-tools
 uv pip install moderngl moderngl-window imgui-bundle
 ```
 
+## Docker Quickstart
+
+For a headless, reproducible CPU setup of Demo #1:
+
+```bash
+make build
+make bootstrap
+make demo1
+```
+
+To capture a persistent host-side log:
+
+```bash
+make demo1-log
+```
+
+For the NVIDIA GPU path:
+
+```bash
+make build-gpu
+make bootstrap
+make demo1-gpu
+```
+
+Notes:
+
+- The Docker image targets the headless `run_boxer.py` flow. Interactive viewer dependencies are intentionally excluded.
+- `docker-compose.yml` mounts `./ckpts`, `./sample_data`, `./output`, and `./logs` into the container so model assets and run artifacts stay on the host.
+- The Make targets pre-create those host directories before Docker touches them, which avoids bind-mount ownership surprises on a clean checkout.
+- The container runs the code baked into the image, not a live source bind mount. After changing Python code or docs used inside the image, rebuild the relevant image with `make build` or `make build-gpu` before rerunning Docker commands.
+- The GPU image includes a C/C++ toolchain because `torch.compile` on CUDA uses Triton JIT and needs a compiler at runtime.
+- The GPU path assumes a host with a working NVIDIA driver stack and Docker GPU support.
+- See `docs/runbook.md` for the full Docker runbook, including the GPU profile.
+- See `docs/output_schema.md` for the emitted CSV and artifact schema.
+- See `docs/input_interface.md` for the flexible `file` / `cv2` / `ros2` input adapter design.
+- See `docs/ros_bridge_plan.md` and `scripts/run_boxer_job.py` for the planned ROS-facing batch interface.
+
+## Flexible Input Interface
+
+`run_boxer.py` and `scripts/run_boxer_job.py` now accept multiple input adapters behind a common frame-source interface:
+
+- `aria`, `ca1m`, `omni3d`, `scannet`: existing dataset loaders
+- `file`: a single image or image directory replay
+- `cv2`: OpenCV-backed video file, camera index, or stream URL
+- `ros2`: ROS 2 `sensor_msgs/Image` or `sensor_msgs/CompressedImage` subscription
+
+Validated Docker GPU examples:
+
+```bash
+docker compose --profile gpu run --rm \
+  -v "$PWD:/opt/boxer" \
+  boxer-gpu \
+  python run_boxer.py \
+    --input_mode file \
+    --input /opt/boxer/output/downloaded_samples/cook0_gen2/cook0_gpu_viz_current.jpg \
+    --max_n 1 \
+    --skip_viz \
+    --output_dir output/interface_smoke \
+    --write_name file_source_smoke
+```
+
+```bash
+docker compose --profile gpu run --rm \
+  -v "$PWD:/opt/boxer" \
+  boxer-gpu \
+  python run_boxer.py \
+    --input_mode cv2 \
+    --input /opt/boxer/output/downloaded_samples/cook0_gen2/cook0_gpu_viz_final.mp4 \
+    --max_n 1 \
+    --skip_viz \
+    --output_dir output/interface_smoke \
+    --write_name cv2_source_smoke
+```
+
+ROS 2 example shape:
+
+```bash
+python run_boxer.py \
+  --input_mode ros2 \
+  --input /camera/image_raw \
+  --ros_compressed \
+  --camera_width 1280 \
+  --camera_height 720 \
+  --camera_fx 900 \
+  --camera_fy 900 \
+  --camera_cx 640 \
+  --camera_cy 360
+```
+
+The ROS 2 adapter is implemented, but only `file` and `cv2` paths were runtime-validated in this repo. The ROS 2 path requires `rclpy` and `sensor_msgs` in the execution environment.
+
+## Minimal Web UI
+
+A minimal batch web UI is available at [webui/server.py](webui/server.py). It supports:
+
+- running local `sample_data/` sequences
+- uploading a single image or video
+- launching `run_boxer_job.py` in the background
+- browsing emitted CSV, JPG, MP4, and manifest artifacts
+
+Start it from the repo root:
+
+```bash
+make webui
+```
+
+For the validated GPU-backed path:
+
+```bash
+make webui-gpu
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000
+```
+
+Current constraints:
+
+- jobs are serialized to one inference run at a time
+- the UI is batch-oriented, not a live websocket stream
+- uploaded files are staged under `webui_uploads/`
+- `make webui` uses the CPU Docker service, `make webui-gpu` uses the GPU Docker service, and `make webui-local` runs inference in the host Python environment
+
+## Validated Docker Demo
+
+The Dockerized CPU path has been validated end-to-end with:
+
+```bash
+python run_boxer.py --input nym10_gen1 --max_n=90 --track
+```
+
+Observed outputs from the validated run:
+
+- `logs/demo1.log`
+- `output/nym10_gen1/boxer_3dbbs.csv`
+- `output/nym10_gen1/owl_2dbbs.csv`
+- `output/nym10_gen1/boxer_3dbbs_tracked.csv`
+- `output/nym10_gen1/boxer_viz_current.jpg`
+- `output/nym10_gen1/boxer_viz_final.mp4`
+
+Observed artifact counts for Demo #1:
+
+- `boxer_3dbbs.csv`: 2201 rows
+- `owl_2dbbs.csv`: 2281 rows
+- `boxer_3dbbs_tracked.csv`: 71 rows
+- `boxer_viz/`: 90 JPG frames
+
+Observed runtime for the validated CPU Docker run was about 9 minutes 42 seconds for 90 frames. This is much slower than MPS or CUDA execution and should be treated as a correctness path, not a fast path.
+
+The Dockerized GPU path has also been validated end-to-end with:
+
+```bash
+docker compose --profile gpu run --rm boxer-gpu \
+  python run_boxer.py --input nym10_gen1 --max_n=90 --track \
+  --output_dir output/gpu_validation_ok --write_name boxer_gpu
+```
+
+Observed outputs from the validated GPU run:
+
+- `output/gpu_validation_ok/nym10_gen1/boxer_gpu_3dbbs.csv`
+- `output/gpu_validation_ok/nym10_gen1/owl_2dbbs.csv`
+- `output/gpu_validation_ok/nym10_gen1/boxer_gpu_3dbbs_tracked.csv`
+- `output/gpu_validation_ok/nym10_gen1/boxer_gpu_viz_current.jpg`
+- `output/gpu_validation_ok/nym10_gen1/boxer_gpu_viz_final.mp4`
+
+Observed artifact counts for the validated GPU run:
+
+- `boxer_gpu_3dbbs.csv`: 1975 rows
+- `owl_2dbbs.csv`: 2036 rows
+- `boxer_gpu_3dbbs_tracked.csv`: 64 rows
+- `boxer_gpu_viz/`: 90 JPG frames
+
+Observed runtime for the validated GPU Docker run was about 1 minute 2 seconds for 90 frames on an NVIDIA GeForce RTX 3060 Laptop GPU with driver `575.57.08`. A container-side check also confirmed `torch.cuda.is_available() == True`.
+
 ## Download Model Checkpoints
 
 We host model checkpoints for BoxerNet, DinoV3 and OWLv2 on [HuggingFace](https://huggingface.co/facebook/boxer). Download them to the `ckpts/` directory:
@@ -62,9 +238,21 @@ Expected to take ~2 mins on mac MPS, <15 secs on CUDA.
 python run_boxer.py --input nym10_gen1 --max_n=90 --track
 ```
 
-This will dump out static images and a video to `outputs/nym10_gen1/`, e.g. something like this in `outputs/nym10_gen1/boxer_viz_current.png`
+This will dump out static images and a video to `output/nym10_gen1/`, e.g. something like this in `output/nym10_gen1/boxer_viz_current.jpg`
 
 ![Run Boxer Demo](docs/images/boxer_viz_current_hohen_gen1.jpg)
+
+For the Dockerized headless path, prefer:
+
+```bash
+make demo1
+```
+
+or, if you want a saved log:
+
+```bash
+make demo1-log
+```
 
 ## Demo #2: BoxerNet Interactive Demo on Aria Data
 For this demo, you need to have a valid display to have the GUI work. This demo allows you to create 2DBB prompts and enter text to prompt OWL to detect objects. Run it like:
@@ -190,7 +378,33 @@ Results are written to `output/<sequence_name>/`:
 - `boxer_3dbbs.csv` — per-frame 3D bounding boxes
 - `owl_2dbbs.csv` — per-frame 2D detections
 - `boxer_3dbbs_tracked.csv` — tracked 3D boxes (with `--track`)
+- `boxer_viz_current.jpg` — latest rendered frame
 - `boxer_viz_final.mp4` — visualization video
+
+For a validated schema walkthrough and concrete Demo #1 counts, see `docs/output_schema.md`.
+
+## Batch Wrapper
+
+For downstream integration and future ROS handoff, use the batch wrapper instead of shelling out to the CLI directly:
+
+```bash
+python scripts/run_boxer_job.py \
+  --input nym10_gen1 \
+  --max_n 90 \
+  --track \
+  --manifest output/nym10_gen1/job_manifest.json
+```
+
+The wrapper still runs Boxer inference, but it also writes a JSON manifest that records:
+
+- requested inputs
+- resolved output directory
+- artifact existence
+- artifact sizes
+- CSV row counts
+- job timing metadata
+
+See `docs/ros_bridge_plan.md` for the intended ROS-side contract.
 
 ### CLI Reference
 
@@ -199,7 +413,7 @@ Results are written to `output/<sequence_name>/`:
 | `--input` | | Path to input sequence |
 | `--detector` | `owl` | 2D detector (`owl`) |
 | `--labels` | `lvisplus` | Comma-separated text prompts, or a taxonomy name |
-| `--thresh2d` | `0.2` | 2D detection confidence threshold |
+| `--thresh2d` | `0.25` | 2D detection confidence threshold |
 | `--thresh3d` | `0.5` | 3D box confidence threshold |
 | `--track` | off | Enable online 3D box tracking |
 | `--fuse` | off | Run post-hoc 3D box fusion |
