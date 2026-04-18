@@ -116,7 +116,14 @@ class BoxerInferenceEngine:
             detections_2d=detections_2d,
             detections_3d=detections_3d,
             timings_ms={**timings_ms, "boxer": round(inference_ms, 3)},
-            metadata={"device": self._device, "detector_name": detector_cfg.detector_name},
+            metadata={
+                "device": self._device,
+                "detector_name": detector_cfg.detector_name,
+                "source_name": frame.source_name,
+                "device_name": frame.device_name,
+                "image_width": int(frame.image_bgr.shape[1]),
+                "image_height": int(frame.image_bgr.shape[0]),
+            },
         )
 
     @staticmethod

@@ -19,6 +19,7 @@ from boxer_api import (
     DetectorConfig,
     PipelineConfig,
     TrackingConfig,
+    write_pipeline_csv_artifacts,
 )
 from boxer_api.adapters import resolve_frame_inputs
 from input_sources import infer_sequence_name
@@ -238,6 +239,12 @@ def run_boxer_job(**kwargs) -> dict[str, Any]:
             frames,
             sequence_name=sequence_name,
         )
+        if not args.no_csv:
+            write_pipeline_csv_artifacts(
+                pipeline_result,
+                output_dir=args.output_dir,
+                write_name=args.write_name,
+            )
     else:
         run_with_args(args)
     duration_sec = time.perf_counter() - start_time
