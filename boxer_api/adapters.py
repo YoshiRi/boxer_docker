@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import Any
 
+from input_sources import infer_sequence_name, resolve_input_source
 from utils.image import torch2cv2
 
 from .types import FrameInput
@@ -34,3 +35,13 @@ def iter_frame_inputs_from_source(source: Iterable[dict[str, Any]]) -> Iterator[
         if datum is False:
             continue
         yield frame_input_from_datum(datum, source=source)
+
+
+def resolve_frame_inputs(args) -> tuple[str, Iterator[FrameInput]]:
+    """Resolve existing CLI args into an API-friendly sequence name and frame iterator."""
+
+    resolved = resolve_input_source(args)
+    sequence_name = infer_sequence_name(args)
+    return sequence_name or resolved.sequence_name, iter_frame_inputs_from_source(
+        resolved.source
+    )

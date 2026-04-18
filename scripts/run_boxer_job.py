@@ -13,6 +13,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from boxer_api import (
+    BoxerConfig,
+    BoxerPipeline,
+    DetectorConfig,
+    PipelineConfig,
+    TrackingConfig,
+)
+from boxer_api.adapters import resolve_frame_inputs
 from input_sources import infer_sequence_name
 from run_boxer import build_arg_parser, run_with_args
 
@@ -54,6 +62,26 @@ def _artifact_records(output_root: Path, write_name: str, track: bool) -> list[d
         row_count = _count_csv_rows(path)
         if row_count is not None:
             record["row_count"] = row_count
+        records.append(record)
+    return records
+
+
+def _artifact_records_from_pipeline(manifest_result: dict[str, Any]) -> list[dict[str, Any]]:
+    records = []
+    for artifact in manifest_result.get("artifacts", []):
+        record = dict(artifact)
+        path_value = record.get("path")
+        if isinstance(path_value, str):
+            path = Path(path_value)
+            if path.exists():
+                record["exists"] = True
+                record.setdefault("size_bytes", path.stat().st_size)
+                row_count = _count_csv_rows(path)
+                if row_count is not None:
+                    record.setdefault("row_count", row_count)
+            else:
+                record.setdefault("exists", False)
+                record.setdefault("size_bytes", None)
         records.append(record)
     return records
 
@@ -101,9 +129,98 @@ def build_job_manifest(args, *, run_started_at: str | None = None, duration_sec:
     }
 
 
+def build_job_manifest_from_api_result(
+    args,
+    pipeline_result,
+    *,
+    run_started_at: str | None = None,
+    duration_sec: float | None = None,
+) -> dict[str, Any]:
+    output_root = (
+        str(Path(os.path.expanduser(args.output_dir)) / pipeline_result.sequence_name)
+        if args.output_dir
+        else None
+    )
+    manifest = {
+        "job": {
+            "status": "completed",
+            "backend": "api",
+            "run_started_at_utc": run_started_at,
+            "manifest_created_at_utc": _utc_now_iso(),
+            "duration_sec": round(duration_sec, 3) if duration_sec is not None else None,
+        },
+        "input": {
+            "input_path": args.input,
+            "output_dir": str(Path(os.path.expanduser(args.output_dir))),
+            "write_name": args.write_name,
+            "input_mode": args.input_mode,
+            "input_glob": args.input_glob,
+            "input_metadata": args.input_metadata,
+            "max_n": args.max_n,
+            "start_n": args.start_n,
+            "skip_n": args.skip_n,
+            "track": args.track,
+            "fuse": args.fuse,
+            "camera": args.camera,
+            "camera_width": args.camera_width,
+            "camera_height": args.camera_height,
+            "camera_fx": args.camera_fx,
+            "camera_fy": args.camera_fy,
+            "camera_cx": args.camera_cx,
+            "camera_cy": args.camera_cy,
+            "frame_period_ns": args.frame_period_ns,
+            "start_time_ns": args.start_time_ns,
+            "stream_name": args.stream_name,
+            "labels": args.labels,
+            "force_cpu": args.force_cpu,
+            "skip_viz": args.skip_viz,
+        },
+        "sequence_name": pipeline_result.sequence_name,
+        "output_root": output_root,
+        "artifacts": _artifact_records_from_pipeline(
+            {
+                "artifacts": pipeline_result.artifacts,
+            }
+        ),
+        "result": {
+            "frames_processed": len(pipeline_result.frames),
+            "metadata": pipeline_result.metadata,
+        },
+    }
+    return manifest
+
+
+def _pipeline_config_from_args(args) -> PipelineConfig:
+    return PipelineConfig(
+        write_name=args.write_name,
+        skip_visualization=args.skip_viz,
+        write_csv=not args.no_csv,
+        enable_fusion=args.fuse,
+        detector=DetectorConfig(
+            detector_name=args.detector,
+            labels=args.labels,
+            threshold_2d=args.thresh2d,
+            detector_hw=args.detector_hw,
+            force_precision=args.force_precision,
+        ),
+        boxer=BoxerConfig(
+            threshold_3d=args.thresh3d,
+            checkpoint_path=args.ckpt,
+            force_cpu=args.force_cpu,
+            force_precision=args.force_precision,
+            disable_sparse_depth=args.no_sdp,
+        ),
+        tracking=TrackingConfig(
+            enabled=args.track,
+            confidence_threshold=args.thresh3d,
+        ),
+    )
+
+
 def run_boxer_job(**kwargs) -> dict[str, Any]:
     parser = build_arg_parser()
     args = parser.parse_args([])
+    backend = kwargs.pop("backend", "legacy")
     if "input_path" in kwargs:
         if "input" in kwargs:
             raise TypeError("Use either 'input' or 'input_path', not both")
@@ -114,8 +231,23 @@ def run_boxer_job(**kwargs) -> dict[str, Any]:
         setattr(args, key, value)
     run_started_at = _utc_now_iso()
     start_time = time.perf_counter()
-    run_with_args(args)
+    if backend == "api":
+        sequence_name, frames = resolve_frame_inputs(args)
+        pipeline = BoxerPipeline(config=_pipeline_config_from_args(args))
+        pipeline_result = pipeline.run_sequence(
+            frames,
+            sequence_name=sequence_name,
+        )
+    else:
+        run_with_args(args)
     duration_sec = time.perf_counter() - start_time
+    if backend == "api":
+        return build_job_manifest_from_api_result(
+            args,
+            pipeline_result,
+            run_started_at=run_started_at,
+            duration_sec=duration_sec,
+        )
     return build_job_manifest(
         args,
         run_started_at=run_started_at,
@@ -126,6 +258,13 @@ def run_boxer_job(**kwargs) -> dict[str, Any]:
 def main(argv=None):
     parser = build_arg_parser()
     parser.description = "Batch wrapper around run_boxer.py for downstream integration."
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="legacy",
+        choices=["legacy", "api"],
+        help="Execution backend. 'legacy' runs run_boxer.py orchestration, 'api' runs boxer_api pipeline.",
+    )
     parser.add_argument(
         "--manifest",
         type=str,
