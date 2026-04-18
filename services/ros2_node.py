@@ -9,6 +9,11 @@ import numpy as np
 
 from boxer_api import BoxerConfig, BoxerInferenceEngine, BoxerInferenceRequest, DetectorConfig, FrameInput
 from input_sources.frame_source import build_identity_pose, build_pinhole_camera
+from services.ros2_messages import (
+    frame_result_to_detection2d_array,
+    frame_result_to_detection3d_array,
+    frame_result_to_track3d_array,
+)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -171,47 +176,18 @@ class BoxerRos2Node:
 
     def _serialize_result(self, result) -> dict:
         return {
-            "timestamp_ns": result.timestamp_ns,
-            "detections_2d": [
-                {
-                    "xyxy": detection.xyxy.tolist(),
-                    "label": detection.label,
-                    "score": detection.score,
-                    "sem_id": detection.sem_id,
-                    "instance_id": detection.instance_id,
-                }
-                for detection in result.detections_2d
-            ],
-            "detections_3d": [
-                {
-                    "center_xyz": detection.center_xyz.tolist(),
-                    "quaternion_wxyz": detection.quaternion_wxyz.tolist(),
-                    "size_xyz": detection.size_xyz.tolist(),
-                    "label": detection.label,
-                    "score": detection.score,
-                    "sem_id": detection.sem_id,
-                    "instance_id": detection.instance_id,
-                }
-                for detection in result.detections_3d
-            ],
-            "tracks_3d": [
-                {
-                    "track_id": track.track_id,
-                    "detection": {
-                        "center_xyz": track.detection.center_xyz.tolist(),
-                        "quaternion_wxyz": track.detection.quaternion_wxyz.tolist(),
-                        "size_xyz": track.detection.size_xyz.tolist(),
-                        "label": track.detection.label,
-                        "score": track.detection.score,
-                        "sem_id": track.detection.sem_id,
-                        "instance_id": track.detection.instance_id,
-                    },
-                    "support_count": track.support_count,
-                    "missed_count": track.missed_count,
-                    "accumulated_weight": track.accumulated_weight,
-                }
-                for track in result.tracks_3d
-            ],
+            "detection_2d_array": frame_result_to_detection2d_array(
+                result,
+                frame_id=self._args.input_topic,
+            ),
+            "detection_3d_array": frame_result_to_detection3d_array(
+                result,
+                frame_id=self._args.input_topic,
+            ),
+            "track_3d_array": frame_result_to_track3d_array(
+                result,
+                frame_id=self._args.input_topic,
+            ),
             "timings_ms": result.timings_ms,
             "metadata": result.metadata,
         }
