@@ -36,7 +36,7 @@ class BoxerPipeline:
         result = PipelineResult(sequence_name=sequence_name, metadata={})
 
         for frame in frames:
-            detections_2d = []
+            detections_2d = None
             if detections_provider is not None:
                 detections_2d = list(detections_provider(frame))
             frame_result = self.engine.infer_frame(

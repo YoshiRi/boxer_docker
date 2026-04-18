@@ -8,7 +8,9 @@ import torch
 
 from boxernet.boxernet import BoxerNet
 from input_sources.frame_source import build_frame_datum
+from owl.owl_wrapper import OwlWrapper
 from utils.demo_utils import CKPT_PATH
+from utils.taxonomy import load_text_labels
 
 from .config import BoxerConfig, DetectorConfig
 from .types import Detection2D, Detection3D, FrameInput, FrameResult
@@ -38,24 +40,26 @@ class BoxerInferenceEngine:
         self.boxer_config = boxer or BoxerConfig()
         self._device = self._select_device(self.boxer_config)
         self._boxernet: BoxerNet | None = None
+        self._owl: OwlWrapper | None = None
+        self._owl_signature: tuple[tuple[str, ...], float, str | None] | None = None
 
     def infer_frame(self, request: BoxerInferenceRequest) -> FrameResult:
         detector_cfg = request.detector or self.detector_config
         boxer_cfg = request.boxer or self.boxer_config
         frame = request.frame
 
-        if request.detections_2d is None:
-            raise NotImplementedError(
-                "Internal 2D detection is not implemented yet; pass detections_2d explicitly"
-            )
-
-        detections_2d = list(request.detections_2d)
+        timings_ms: dict[str, float] = {}
+        detections_2d = list(request.detections_2d) if request.detections_2d is not None else None
+        if detections_2d is None:
+            detections_2d, detect_ms = self._detect_2d(frame, detector_cfg)
+            timings_ms["owl"] = round(detect_ms, 3)
         if not detections_2d:
             return FrameResult(
                 timestamp_ns=frame.timestamp_ns,
                 detections_2d=[],
                 detections_3d=[],
-                metadata={"device": self._device},
+                timings_ms=timings_ms,
+                metadata={"device": self._device, "detector_name": detector_cfg.detector_name},
             )
 
         boxernet = self._ensure_boxernet(boxer_cfg)
@@ -113,7 +117,7 @@ class BoxerInferenceEngine:
             timestamp_ns=frame.timestamp_ns,
             detections_2d=detections_2d,
             detections_3d=detections_3d,
-            timings_ms={"boxer": round(inference_ms, 3)},
+            timings_ms={**timings_ms, "boxer": round(inference_ms, 3)},
             metadata={"device": self._device, "detector_name": detector_cfg.detector_name},
         )
 
@@ -135,6 +139,64 @@ class BoxerInferenceEngine:
                 device=self._device,
             )
         return self._boxernet
+
+    def _ensure_owl(self, detector_cfg: DetectorConfig) -> OwlWrapper:
+        text_labels = load_text_labels(detector_cfg.labels)
+        signature = (
+            tuple(text_labels),
+            float(detector_cfg.threshold_2d),
+            detector_cfg.force_precision,
+        )
+        if self._owl is None or self._owl_signature != signature:
+            self._owl = OwlWrapper(
+                device=self._device,
+                text_prompts=text_labels,
+                min_confidence=detector_cfg.threshold_2d,
+                precision=detector_cfg.force_precision,
+            )
+            self._owl_signature = signature
+        return self._owl
+
+    def _detect_2d(
+        self,
+        frame: FrameInput,
+        detector_cfg: DetectorConfig,
+    ) -> tuple[list[Detection2D], float]:
+        if detector_cfg.detector_name != "owl":
+            raise ValueError(f"Unsupported detector '{detector_cfg.detector_name}'")
+
+        owl = self._ensure_owl(detector_cfg)
+        image_torch = build_frame_datum(
+            img_bgr=frame.image_bgr,
+            timestamp_ns=frame.timestamp_ns,
+            camera=frame.camera,
+            pose=frame.pose_world_rig,
+            resize=None,
+            rotated=frame.rotated,
+            sdp_w=frame.sparse_points_world,
+        )["img0"]
+        text_labels = load_text_labels(detector_cfg.labels)
+
+        t0 = time.perf_counter()
+        bb2d, scores2d, label_ints, _ = owl.forward(
+            image_torch * 255.0,
+            frame.rotated,
+            resize_to_HW=(detector_cfg.detector_hw, detector_cfg.detector_hw),
+        )
+        detect_ms = (time.perf_counter() - t0) * 1000.0
+
+        detections_2d = []
+        for idx in range(len(label_ints)):
+            box = bb2d[idx]
+            detections_2d.append(
+                Detection2D(
+                    xyxy=np.array([box[0], box[2], box[1], box[3]], dtype=np.float32),
+                    label=text_labels[int(label_ints[idx])],
+                    score=float(scores2d[idx]),
+                    sem_id=int(label_ints[idx]),
+                )
+            )
+        return detections_2d, detect_ms
 
     @staticmethod
     def _prepare_2d_inputs(
