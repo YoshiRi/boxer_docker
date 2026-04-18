@@ -36,8 +36,10 @@ RUN python -m pip install --upgrade pip setuptools wheel \
         opencv-python-headless \
         pillow \
         projectaria-tools \
+        timm \
+        transformers \
         tqdm \
-    && python -c "import cv2, dill, projectaria_tools, torch, tqdm; print('import check ok')"
+    && python -c "import cv2, dill, projectaria_tools, torch, tqdm, transformers; print('import check ok')"
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["bash"]
