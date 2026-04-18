@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from utils.image import torch2cv2
@@ -24,3 +25,12 @@ def frame_input_from_datum(datum: dict[str, Any], *, source: Any | None = None) 
         device_name=getattr(source, "device_name", None),
         metadata={},
     )
+
+
+def iter_frame_inputs_from_source(source: Iterable[dict[str, Any]]) -> Iterator[FrameInput]:
+    """Yield public API frame objects from an existing Boxer source iterable."""
+
+    for datum in source:
+        if datum is False:
+            continue
+        yield frame_input_from_datum(datum, source=source)
