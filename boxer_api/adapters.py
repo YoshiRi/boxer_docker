@@ -1,0 +1,26 @@
+from __future__ import annotations
+
+from typing import Any
+
+from utils.image import torch2cv2
+
+from .types import FrameInput
+
+
+def frame_input_from_datum(datum: dict[str, Any], *, source: Any | None = None) -> FrameInput:
+    """Convert an existing runner datum into the public API frame type."""
+
+    rotated_value = datum.get("rotated0", False)
+    rotated = bool(rotated_value.item()) if hasattr(rotated_value, "item") else bool(rotated_value)
+
+    return FrameInput(
+        image_bgr=torch2cv2(datum["img0"], rotate=datum["rotated0"], ensure_rgb=False),
+        camera=datum["cam0"],
+        pose_world_rig=datum["T_world_rig0"],
+        sparse_points_world=datum["sdp_w"],
+        timestamp_ns=int(datum["time_ns0"]),
+        rotated=rotated,
+        source_name=getattr(source, "camera", None),
+        device_name=getattr(source, "device_name", None),
+        metadata={},
+    )
