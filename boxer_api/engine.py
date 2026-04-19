@@ -11,7 +11,7 @@ from input_sources.frame_source import build_frame_datum
 from utils.demo_utils import CKPT_PATH
 
 from .config import BoxerConfig, DetectorConfig
-from .detectors import OwlDetector
+from .detectors import OwlDetector, make_detector
 from .types import Detection2D, Detection3D, FrameInput, FrameResult
 
 
@@ -39,7 +39,8 @@ class BoxerInferenceEngine:
         self.boxer_config = boxer or BoxerConfig()
         self._device = self._select_device(self.boxer_config)
         self._boxernet: BoxerNet | None = None
-        self._owl_detector = OwlDetector(device=self._device)
+        self._detector = make_detector(self.detector_config.detector_name, device=self._device)
+        self._loaded_detector_name = self.detector_config.detector_name
 
     def infer_frame(self, request: BoxerInferenceRequest) -> FrameResult:
         detector_cfg = request.detector or self.detector_config
@@ -150,9 +151,11 @@ class BoxerInferenceEngine:
         frame: FrameInput,
         detector_cfg: DetectorConfig,
     ) -> tuple[list[Detection2D], float]:
-        if detector_cfg.detector_name != "owl":
-            raise ValueError(f"Unsupported detector '{detector_cfg.detector_name}'")
-        return self._owl_detector.detect(frame, detector_cfg)
+        # Re-create the detector only when the requested backend name changes.
+        if self._loaded_detector_name != detector_cfg.detector_name:
+            self._detector = make_detector(detector_cfg.detector_name, device=self._device)
+            self._loaded_detector_name = detector_cfg.detector_name
+        return self._detector.detect(frame, detector_cfg)
 
     @staticmethod
     def _prepare_2d_inputs(
@@ -183,14 +186,16 @@ class BoxerInferenceEngine:
 
     @staticmethod
     def _obb_to_detection3d(obb, label: str) -> Detection3D:
-        centered = obb.center()
+        from utils.tw.pose import rotmat_to_quat
+
+        center = obb.bb3_center_world.detach().cpu().numpy().reshape(3)
+        R = obb.T_world_object.R.detach().cpu().numpy().reshape(3, 3)
+        qwxyz = rotmat_to_quat(R)
+        size = obb.bb3_diagonal.detach().cpu().numpy().reshape(3)
         return Detection3D(
-            center_xyz=centered.T_world_object.t.detach().cpu().numpy().reshape(3),
-            quaternion_wxyz=centered.T_world_object.q.detach()
-            .cpu()
-            .numpy()
-            .reshape(4),
-            size_xyz=centered.bb3_diagonal.detach().cpu().numpy().reshape(3),
+            center_xyz=center,
+            quaternion_wxyz=np.array(qwxyz, dtype=np.float32),
+            size_xyz=size,
             label=label,
             score=float(obb.prob.item()),
             sem_id=int(obb.sem_id.item()),
