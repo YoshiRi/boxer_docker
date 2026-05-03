@@ -97,7 +97,8 @@ def build_arg_parser():
     parser.add_argument("--max_n", type=int, default=99999, help="run for max n frames")
     parser.add_argument("--pinhole", action="store_true", help="rectify to pinhole")
     parser.add_argument("--camera", type=str, default="rgb", choices=["rgb", "slaml", "slamr"], help="camera to use (default: rgb)")
-    parser.add_argument("--detector", type=str, default="owl", choices=["owl"], help="2D detector to use (default: owl)")
+    parser.add_argument("--detector", type=str, default="owl", choices=["owl", "hf"], help="2D detector to use: 'owl' (built-in) or 'hf' (HuggingFace, requires --hf_model)")
+    parser.add_argument("--hf_model", type=str, default="IDEA-Research/grounding-dino-base", help="HuggingFace model ID when --detector=hf")
     parser.add_argument("--thresh2d", type=float, default=0.25, help="detection confidence for 2d detector")
     parser.add_argument("--thresh3d", type=float, default=0.5, help="detection confidence for boxer")
     parser.add_argument("--labels", type=comma_separated_list, nargs="?", const=[], default=["lvisplus"], help="Optional comma-separated list of text prompts (e.g. --labels=small or --labels=chair,table,lamp)")
@@ -118,7 +119,7 @@ def build_arg_parser():
     return parser
 
 
-def run_with_args(args):
+def run_with_args(args, *, source=None, output_callback=None):
     if args.fuse and args.track:
         raise ValueError("--fuse and --track are mutually exclusive")
     if args.cache3d:
@@ -176,9 +177,14 @@ def run_with_args(args):
             )
         return
 
-    resolved_source = resolve_input_source(args)
-    source = resolved_source.source
-    source_kind = resolved_source.kind
+    if source is not None:
+        # Injected by BoxerPipeline — skip auto-detection
+        source_kind = "push"
+        print(f"==> Using injected PushFrameSource '{source.sequence_name}'")
+    else:
+        resolved_source = resolve_input_source(args)
+        source = resolved_source.source
+        source_kind = resolved_source.kind
     if source_kind == "aria":
         print(f"==> Sequence name: '{resolved_source.sequence_name}'")
     elif source_kind == "omni3d":
@@ -234,6 +240,16 @@ def run_with_args(args):
         method = "CACHED"
     elif args.gt2d:
         method = "GT2D"
+    elif args.detector == "hf":
+        from detectors.hf_detector import HFDetector
+
+        owl = HFDetector(
+            model_id=args.hf_model,
+            device=device,
+            text_prompts=text_labels,
+            min_confidence=args.thresh2d,
+        )
+        method = f"HF:{args.hf_model.split('/')[-1]}"
     else:
         from owl.owl_wrapper import OwlWrapper
 
@@ -527,6 +543,9 @@ def run_with_args(args):
                 device=source.device_name if hasattr(source, "device_name") else "unknown",
             )
         t_csv = timer.stop("csv")
+
+        if output_callback is not None:
+            output_callback(obb_pr_w, time_ns)
 
         active_tracks = None
         if tracker is not None:

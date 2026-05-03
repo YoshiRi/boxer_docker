@@ -20,6 +20,36 @@ services:
       - ./logs:/opt/boxer/logs
     command: bash
 
+  boxer-realsense:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TORCH_VERSION: ${TORCH_VERSION:-2.5.1}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    image: boxer:realsense
+    working_dir: /opt/boxer
+    stdin_open: true
+    tty: true
+    shm_size: "8gb"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./ckpts:/opt/boxer/ckpts
+      - ./output:/opt/boxer/output
+      - ./logs:/opt/boxer/logs
+    # Pass RealSense USB device into the container.
+    # Run `rs-enumerate-devices` on the host to confirm the bus path.
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+    command: >
+      python demo_sensor.py
+        --detector IDEA-Research/grounding-dino-base
+        --labels "chair,table,monitor,sofa,person"
+    profiles:
+      - realsense
+
   boxer-gpu:
     build:
       context: .

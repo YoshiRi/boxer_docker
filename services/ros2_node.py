@@ -50,6 +50,19 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ckpt", type=str, default=None)
     parser.add_argument("--thresh2d", type=float, default=0.25)
     parser.add_argument("--thresh3d", type=float, default=0.5)
+    parser.add_argument(
+        "--tf-frame-id",
+        default="map",
+        help=(
+            "TF coordinate frame name written into ROS2 message headers for 3D outputs "
+            "(e.g. 'map', 'odom').  2D outputs use 'camera_link' by default."
+        ),
+    )
+    parser.add_argument(
+        "--camera-tf-frame-id",
+        default="camera_link",
+        help="TF coordinate frame name for 2D detection headers (default: 'camera_link').",
+    )
     return parser
 
 
@@ -178,15 +191,15 @@ class BoxerRos2Node:
         return {
             "detection_2d_array": frame_result_to_detection2d_array(
                 result,
-                frame_id=self._args.input_topic,
+                tf_frame_id=self._args.camera_tf_frame_id,
             ),
             "detection_3d_array": frame_result_to_detection3d_array(
                 result,
-                frame_id=self._args.input_topic,
+                tf_frame_id=self._args.tf_frame_id,
             ),
             "track_3d_array": frame_result_to_track3d_array(
                 result,
-                frame_id=self._args.input_topic,
+                tf_frame_id=self._args.tf_frame_id,
             ),
             "timings_ms": result.timings_ms,
             "metadata": result.metadata,

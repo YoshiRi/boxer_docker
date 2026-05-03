@@ -10,6 +10,7 @@ class DetectorConfig:
     threshold_2d: float = 0.25
     detector_hw: int = 960
     force_precision: str | None = None
+    hf_model_id: str = "IDEA-Research/grounding-dino-base"
 
 
 @dataclass(slots=True)

@@ -6,13 +6,19 @@ from typing import Any
 def frame_result_to_detection2d_array(
     frame_result,
     *,
-    frame_id: str,
+    tf_frame_id: str = "camera_link",
 ) -> dict[str, Any]:
+    """Serialise 2D detections for JSON/ROS2 publishing.
+
+    Args:
+        tf_frame_id: TF coordinate frame name for the ROS2 header (e.g.
+            ``"camera_link"``).  This is **not** the ROS2 topic name.
+    """
     metadata = frame_result.metadata
     return {
         "header": {
             "stamp_ns": frame_result.timestamp_ns,
-            "frame_id": frame_id,
+            "frame_id": tf_frame_id,
         },
         "detections": [
             {
@@ -39,13 +45,20 @@ def frame_result_to_detection2d_array(
 def frame_result_to_detection3d_array(
     frame_result,
     *,
-    frame_id: str,
+    tf_frame_id: str = "map",
 ) -> dict[str, Any]:
+    """Serialise 3D detections for JSON/ROS2 publishing.
+
+    Args:
+        tf_frame_id: TF coordinate frame name for the ROS2 header (e.g.
+            ``"map"`` or ``"odom"``).  3D boxes are expressed in world frame,
+            so this should match the world/map frame of the TF tree.
+    """
     metadata = frame_result.metadata
     return {
         "header": {
             "stamp_ns": frame_result.timestamp_ns,
-            "frame_id": frame_id,
+            "frame_id": tf_frame_id,
         },
         "detections": [
             {
@@ -71,12 +84,18 @@ def frame_result_to_detection3d_array(
 def frame_result_to_track3d_array(
     frame_result,
     *,
-    frame_id: str,
+    tf_frame_id: str = "map",
 ) -> dict[str, Any]:
+    """Serialise 3D tracks for JSON/ROS2 publishing.
+
+    Args:
+        tf_frame_id: TF coordinate frame name for the ROS2 header (e.g.
+            ``"map"`` or ``"odom"``).
+    """
     return {
         "header": {
             "stamp_ns": frame_result.timestamp_ns,
-            "frame_id": frame_id,
+            "frame_id": tf_frame_id,
         },
         "tracks": [
             {

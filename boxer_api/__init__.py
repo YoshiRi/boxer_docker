@@ -3,7 +3,7 @@
 from .adapters import frame_input_from_datum, iter_frame_inputs_from_source
 from .artifacts import write_pipeline_csv_artifacts
 from .config import BoxerConfig, DetectorConfig, PipelineConfig, TrackingConfig
-from .detectors import OwlDetector
+from .detectors import HFDetector, OwlDetector
 from .engine import BoxerInferenceEngine, BoxerInferenceRequest
 from .pipeline import BoxerPipeline
 from .types import Detection2D, Detection3D, FrameInput, FrameResult, PipelineResult, Track3D
@@ -14,6 +14,7 @@ __all__ = [
     "BoxerInferenceRequest",
     "BoxerPipeline",
     "DetectorConfig",
+    "HFDetector",
     "OwlDetector",
     "PipelineConfig",
     "TrackingConfig",
